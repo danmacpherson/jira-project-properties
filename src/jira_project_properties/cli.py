@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import sys
 from pathlib import Path
@@ -79,10 +80,10 @@ def cmd_find(args: argparse.Namespace, client: JiraProjectPropertiesClient) -> i
 # --------------------------------------------------------------------------- #
 
 
-def _add_connection_options(
+def _add_global_options(
     parser: argparse.ArgumentParser, *, suppress: bool
 ) -> None:
-    """Register --url/--token/--api-version/--timeout on *parser*.
+    """Register the global options on *parser*.
 
     Called once on the main parser (with real defaults) and once on every
     subparser (with ``SUPPRESS`` defaults) so the options work both before and
@@ -126,6 +127,12 @@ def _add_connection_options(
         metavar="SECONDS",
         help="HTTP timeout in seconds (default: 30)",
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        default=argparse.SUPPRESS if suppress else False,
+        help="print each API request (method and endpoint) to stderr",
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -156,7 +163,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--version", action="version", version="%(prog)s {}".format(__version__)
     )
-    _add_connection_options(parser, suppress=False)
+    _add_global_options(parser, suppress=False)
 
     subparsers = parser.add_subparsers(
         dest="command", metavar="COMMAND", required=True
@@ -206,7 +213,7 @@ def build_parser() -> argparse.ArgumentParser:
     find_parser.set_defaults(func=cmd_find)
 
     for subparser in subparsers.choices.values():
-        _add_connection_options(subparser, suppress=True)
+        _add_global_options(subparser, suppress=True)
 
     return parser
 
@@ -236,6 +243,16 @@ def _token_from_env() -> str | None:
         if value:
             return value
     return None
+
+
+def _configure_debug_logging() -> None:
+    """Log API requests to stderr at DEBUG level (used by --debug)."""
+    logger = logging.getLogger(__package__)
+    logger.setLevel(logging.DEBUG)
+    if not logger.handlers:
+        handler = logging.StreamHandler(sys.stderr)
+        handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+        logger.addHandler(handler)
 
 
 # --------------------------------------------------------------------------- #
@@ -271,6 +288,9 @@ def main(argv: list[str] | None = None) -> int:
             " $JIRA_EMAIL)".format(url),
             file=sys.stderr,
         )
+
+    if args.debug:
+        _configure_debug_logging()
 
     try:
         client = JiraProjectPropertiesClient(

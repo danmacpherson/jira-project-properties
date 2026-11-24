@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 
 import pytest
 import requests
@@ -335,3 +336,31 @@ def test_find_projects_results_are_sorted_by_project_key():
     )
     client, _ = make_client(response=page)
     assert list(client.find_projects_with_property("flag")) == ["AAA", "ZZZ"]
+
+
+# --------------------------------------------------------------------------- #
+# request logging (--debug)                                                    #
+# --------------------------------------------------------------------------- #
+
+
+def test_api_calls_are_logged_at_debug_level(caplog):
+    client, _ = make_client(response=FakeResponse(json_data={"keys": []}))
+    with caplog.at_level(logging.DEBUG, logger="jira_project_properties"):
+        client.list_keys("ABC")
+    messages = [record.getMessage() for record in caplog.records]
+    expected = "GET " + BASE_URL + "/rest/api/2/project/ABC/properties"
+    assert expected in messages
+
+
+def test_logged_urls_include_query_parameters(caplog):
+    page = _search_page([{"key": "ABC", "properties": {"flag": 1}}], True, 1)
+    client, _ = make_client(response=page)
+    with caplog.at_level(logging.DEBUG, logger="jira_project_properties"):
+        client.find_projects_with_property("flag")
+    messages = [record.getMessage() for record in caplog.records]
+    assert any(
+        "/project/search?" in message
+        and "startAt=0" in message
+        and "properties=flag" in message
+        for message in messages
+    )

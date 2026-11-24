@@ -30,10 +30,13 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 import requests
+
+logger = logging.getLogger(__name__)
 
 #: Limits imposed by the Jira entity property API.
 MAX_KEY_BYTES = 255
@@ -190,6 +193,10 @@ class JiraProjectPropertiesClient:
         if body is not None:
             headers["Content-Type"] = "application/json"
             data = body.encode("utf-8")
+        logged_url = url
+        if params:
+            logged_url = "{}?{}".format(url, urlencode(params, quote_via=quote))
+        logger.debug("%s %s", method, logged_url)
         try:
             response = self.session.request(
                 method,

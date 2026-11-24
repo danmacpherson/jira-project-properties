@@ -90,6 +90,9 @@ jira-props get ABC deployment.notes
 # Find every project that has a property, with its value
 jira-props find deployment.notes
 
+# Print each API request (method and endpoint) to stderr while running
+jira-props --debug find deployment.notes
+
 # Set a property (the value must be valid JSON)
 jira-props set ABC deployment.notes --value '{"environment": "prod", "replicas": 3}'
 
@@ -123,6 +126,9 @@ jira-props --url https://your-domain.atlassian.net --email you@example.com \
   `properties` query parameter, so each project's value arrives with the
   search results — one request per 50 projects. Results are sorted by
   project key and only include projects visible to the authenticated user.
+- `--debug` prints one line per API call (`METHOD endpoint`, query string
+  included) to stderr, so stdout stays pipeable; combine it with `find` to
+  watch pagination advance.
 - Reading requires the *Browse Projects* permission; setting/deleting requires
   *Administer Projects* (or global *Administer Jira*).
 - Jira Cloud serves the same endpoints under both `/rest/api/2/` and

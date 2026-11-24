@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import io
+import logging
 import sys
 
 import pytest
 
 from jira_project_properties import cli
-from jira_project_properties.client import JiraAPIError
+from jira_project_properties.client import (
+    JiraAPIError,
+    JiraProjectPropertiesClient,
+)
 
 
 class FakeClient:
@@ -261,3 +265,54 @@ def test_version_flag_prints_version(capsys):
         cli.main(["--version"])
     assert excinfo.value.code == 0
     assert "jira-props" in capsys.readouterr().out
+
+
+# --------------------------------------------------------------------------- #
+# debug output                                                                 #
+# --------------------------------------------------------------------------- #
+
+
+def test_debug_flag_parses_before_and_after_subcommand():
+    assert cli.build_parser().parse_args(["--debug", "list", "ABC"]).debug is True
+    assert cli.build_parser().parse_args(["list", "ABC", "--debug"]).debug is True
+    assert cli.build_parser().parse_args(["list", "ABC"]).debug is False
+
+
+def test_debug_option_prints_api_endpoints(monkeypatch, capsys):
+    class StubResponse:
+        ok = True
+        status_code = 200
+        text = '{"keys": []}'
+        reason = "OK"
+
+        def json(self):
+            return {"keys": []}
+
+    class StubSession:
+        def request(self, method, url, **kwargs):
+            return StubResponse()
+
+    def factory(base_url, token, **kwargs):
+        return JiraProjectPropertiesClient(
+            base_url, token, session=StubSession(), **kwargs
+        )
+
+    monkeypatch.setattr(cli, "JiraProjectPropertiesClient", factory)
+    monkeypatch.setenv("JIRA_URL", "https://jira.example.com")
+    monkeypatch.setenv("JIRA_TOKEN", "secret")
+
+    logger = logging.getLogger("jira_project_properties")
+    saved_level, saved_handlers = logger.level, logger.handlers[:]
+    try:
+        code = cli.main(["--debug", "list", "ABC"])
+        captured = capsys.readouterr()
+    finally:
+        logger.setLevel(saved_level)
+        logger.handlers[:] = saved_handlers
+
+    assert code == 0
+    assert "DEBUG" in captured.err
+    assert (
+        "GET https://jira.example.com/rest/api/2/project/ABC/properties"
+        in captured.err
+    )

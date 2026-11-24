@@ -129,7 +129,7 @@ class JiraProjectPropertiesClient:
         self._request("DELETE", self._url(project_id_or_key, property_key))
 
     def find_projects_with_property(
-        self, property_key: str, *, page_size: int = 50
+        self, property_key: str, *, page_size: int = 100
     ) -> dict[str, Any]:
         """Find every project that has *property_key* set.
 
@@ -138,6 +138,8 @@ class JiraProjectPropertiesClient:
         parameter, and returns a ``{project_key: property_value}`` mapping
         for the projects that have the property (sorted by project key).
         Only projects visible to the authenticated user are searched.
+        *page_size* is the number of projects per request; Jira allows at
+        most 100.
         """
         self._check_key(property_key)
         matches: dict[str, Any] = {}

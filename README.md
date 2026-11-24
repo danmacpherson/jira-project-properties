@@ -124,8 +124,9 @@ jira-props --url https://your-domain.atlassian.net --email you@example.com \
   checked client-side before sending.
 - `find` walks the paginated `GET /project/search` endpoint and uses its
   `properties` query parameter, so each project's value arrives with the
-  search results — one request per 50 projects. Results are sorted by
-  project key and only include projects visible to the authenticated user.
+  search results — one request per 100 projects (Jira's maximum page size).
+  Results are sorted by project key and only include projects visible to the
+  authenticated user.
 - `--debug` prints one line per API call (`METHOD endpoint`, query string
   included) to stderr, so stdout stays pipeable; combine it with `find` to
   watch pagination advance.

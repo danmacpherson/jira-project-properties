@@ -308,6 +308,14 @@ def test_find_projects_returns_empty_mapping_when_nothing_matches():
     assert client.find_projects_with_property("flag") == {}
 
 
+def test_find_projects_uses_the_maximum_page_size_by_default():
+    client, session = make_client(
+        response=_search_page([{"key": "ABC", "properties": {}}], True, 1)
+    )
+    client.find_projects_with_property("flag")
+    assert session.calls[0]["params"]["maxResults"] == 100
+
+
 def test_find_projects_stops_on_empty_page_without_is_last():
     pages = [
         _search_page([{"key": "ABC", "properties": {"flag": 1}}], False, 5),

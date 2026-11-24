@@ -8,6 +8,7 @@ through the official REST API:
 - `get` — the value of one property (pretty-printed JSON)
 - `set` — create or update a property
 - `delete` — remove a property
+- `find` — every project that has a given property, as a `{project: value}` JSON object
 
 API reference:
 <https://developer.atlassian.com/cloud/jira/platform/rest/v2/api-group-project-properties/>
@@ -86,6 +87,9 @@ jira-props list ABC
 # Get the value of one property
 jira-props get ABC deployment.notes
 
+# Find every project that has a property, with its value
+jira-props find deployment.notes
+
 # Set a property (the value must be valid JSON)
 jira-props set ABC deployment.notes --value '{"environment": "prod", "replicas": 3}'
 
@@ -115,6 +119,10 @@ jira-props --url https://your-domain.atlassian.net --email you@example.com \
 
 - Property keys are limited to 255 bytes and values to 32,768 bytes; both are
   checked client-side before sending.
+- `find` walks the paginated `GET /project/search` endpoint and uses its
+  `properties` query parameter, so each project's value arrives with the
+  search results — one request per 50 projects. Results are sorted by
+  project key and only include projects visible to the authenticated user.
 - Reading requires the *Browse Projects* permission; setting/deleting requires
   *Administer Projects* (or global *Administer Jira*).
 - Jira Cloud serves the same endpoints under both `/rest/api/2/` and

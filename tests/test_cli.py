@@ -18,6 +18,7 @@ class FakeClient:
         self.email = kwargs.get("email")
         self.kwargs = kwargs
         self.calls = []
+        self.find_results = {"ABC": {"enabled": True}, "XYZ": "on"}
 
     def list_keys(self, project):
         self.calls.append(("list_keys", project))
@@ -33,6 +34,10 @@ class FakeClient:
 
     def delete_value(self, project, key):
         self.calls.append(("delete_value", project, key))
+
+    def find_projects_with_property(self, property_key):
+        self.calls.append(("find_projects_with_property", property_key))
+        return dict(self.find_results)
 
 
 class _TtyInput(io.StringIO):
@@ -131,6 +136,30 @@ def test_delete(cli_env, capsys):
     assert code == 0
     assert client.calls == [("delete_value", "ABC", "k")]
     assert "Deleted property 'k' from project 'ABC'" in capsys.readouterr().out
+
+
+def test_find_prints_matches_as_json(cli_env, capsys):
+    code, client = cli_env.run(["find", "owner"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert client.calls == [("find_projects_with_property", "owner")]
+    assert '"ABC"' in out
+    assert '"XYZ"' in out
+    assert '"enabled": true' in out
+
+
+def test_find_with_no_matches_prints_empty_object(cli_env, capsys):
+    class NoMatchClient(FakeClient):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.find_results = {}
+
+    cli_env.use(NoMatchClient)
+    code, _ = cli_env.run(["find", "missing.key"])
+    captured = capsys.readouterr()
+    assert code == 0
+    assert captured.out.strip() == "{}"
+    assert "no projects" in captured.err
 
 
 # --------------------------------------------------------------------------- #

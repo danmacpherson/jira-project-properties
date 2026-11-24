@@ -34,8 +34,13 @@ class FakeResponse:
 
 
 class FakeSession:
-    def __init__(self, response=None, exception=None):
-        self.response = response
+    def __init__(self, response=None, responses=None, exception=None):
+        if responses is not None:
+            self.responses = list(responses)
+        elif response is not None:
+            self.responses = [response]
+        else:
+            self.responses = []
         self.exception = exception
         self.calls = []
 
@@ -43,16 +48,18 @@ class FakeSession:
         self.calls.append(dict(method=method, url=url, **kwargs))
         if self.exception is not None:
             raise self.exception
-        assert self.response is not None
-        return self.response
+        assert self.responses, "no canned response available"
+        if len(self.responses) > 1:
+            return self.responses.pop(0)
+        return self.responses[0]
 
     @property
     def last(self):
         return self.calls[-1]
 
 
-def make_client(response=None, exception=None, **kwargs):
-    session = FakeSession(response=response, exception=exception)
+def make_client(response=None, responses=None, exception=None, **kwargs):
+    session = FakeSession(response=response, responses=responses, exception=exception)
     client = JiraProjectPropertiesClient(
         BASE_URL, "secret-token", session=session, **kwargs
     )
@@ -241,3 +248,90 @@ def test_api_version_is_used_in_urls():
     )
     client.list_keys("ABC")
     assert "/rest/api/3/" in session.last["url"]
+
+
+# --------------------------------------------------------------------------- #
+# find_projects_with_property                                                  #
+# --------------------------------------------------------------------------- #
+
+
+def _search_page(values, is_last, total):
+    return FakeResponse(
+        json_data={
+            "startAt": 0,
+            "maxResults": len(values) or 1,
+            "total": total,
+            "isLast": is_last,
+            "values": values,
+        }
+    )
+
+
+def test_find_projects_collects_matches_from_all_pages():
+    pages = [
+        _search_page(
+            [
+                {"key": "ABC", "properties": {"flag": {"on": True}}},
+                {"key": "DEF", "properties": {}},
+            ],
+            is_last=False,
+            total=4,
+        ),
+        _search_page(
+            [
+                {"key": "GHI"},  # no properties map at all
+                {"key": "XYZ", "properties": {"flag": "yes", "other": 1}},
+            ],
+            is_last=True,
+            total=4,
+        ),
+    ]
+    client, session = make_client(responses=pages)
+    result = client.find_projects_with_property("flag", page_size=2)
+    assert result == {"ABC": {"on": True}, "XYZ": "yes"}
+    assert len(session.calls) == 2
+    for call in session.calls:
+        assert call["url"].endswith("/rest/api/2/project/search")
+    assert session.calls[0]["params"] == {
+        "startAt": 0,
+        "maxResults": 2,
+        "properties": "flag",
+    }
+    assert session.calls[1]["params"]["startAt"] == 2
+
+
+def test_find_projects_returns_empty_mapping_when_nothing_matches():
+    client, _ = make_client(
+        response=_search_page([{"key": "ABC", "properties": {}}], True, 1)
+    )
+    assert client.find_projects_with_property("flag") == {}
+
+
+def test_find_projects_stops_on_empty_page_without_is_last():
+    pages = [
+        _search_page([{"key": "ABC", "properties": {"flag": 1}}], False, 5),
+        _search_page([], False, 5),
+    ]
+    client, session = make_client(responses=pages)
+    assert client.find_projects_with_property("flag") == {"ABC": 1}
+    assert len(session.calls) == 2
+
+
+def test_find_projects_validates_the_property_key():
+    client, session = make_client()
+    with pytest.raises(ValueError):
+        client.find_projects_with_property("k" * (MAX_KEY_BYTES + 1))
+    assert session.calls == []
+
+
+def test_find_projects_results_are_sorted_by_project_key():
+    page = _search_page(
+        [
+            {"key": "ZZZ", "properties": {"flag": 1}},
+            {"key": "AAA", "properties": {"flag": 2}},
+        ],
+        True,
+        2,
+    )
+    client, _ = make_client(response=page)
+    assert list(client.find_projects_with_property("flag")) == ["AAA", "ZZZ"]

@@ -11,8 +11,12 @@ Useful for trying out ``jira-props`` without a real Jira instance:
     uv run jira-props --url http://127.0.0.1:8923 --email demo@example.com \\
         --token anything list ABC
 
-Any Basic (Cloud-style) or bearer (PAT-style) credentials are accepted.
-Data is kept in memory only.
+    uv run jira-props --url http://127.0.0.1:8923 --email demo@example.com \\
+        --token anything find demo.key
+
+Projects ABC, DEF, and GHI exist from the start; setting a property on
+another project registers it. Any Basic (Cloud-style) or bearer
+(PAT-style) credentials are accepted. Data is kept in memory only.
 """
 
 from __future__ import annotations
@@ -20,14 +24,59 @@ from __future__ import annotations
 import argparse
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs
 
 _MISSING = object()
 PROPERTIES = {}  # {project: {key: value}}
+PROJECTS = {  # {key: {"id", "key", "name"}}
+    key: {"id": str(10000 + index), "key": key, "name": "Project " + key}
+    for index, key in enumerate(("ABC", "DEF", "GHI"), start=1)
+}
+
+
+def search_projects(method, query):
+    """Serve GET /rest/api/2/project/search with pagination + properties."""
+    if method != "GET":
+        return 405, {"errorMessages": ["method not allowed"]}
+    params = parse_qs(query)
+    start_at = int(params.get("startAt", ["0"])[0])
+    max_results = int(params.get("maxResults", ["50"])[0])
+    wanted = []
+    for item in params.get("properties", []):
+        wanted.extend(part for part in item.split(",") if part)
+
+    projects = sorted(PROJECTS.values(), key=lambda p: p["key"])
+    total = len(projects)
+    page = projects[start_at : start_at + max_results]
+    values = []
+    for project in page:
+        entry = dict(project)
+        if wanted:
+            props = PROPERTIES.get(project["key"], {})
+            entry["properties"] = {
+                key: props[key] for key in wanted if key in props
+            }
+        values.append(entry)
+    return 200, {
+        "startAt": start_at,
+        "maxResults": max_results,
+        "total": total,
+        "isLast": start_at + len(page) >= total,
+        "values": values,
+    }
 
 
 def handle(method, path, body):
-    parts = [part for part in path.split("?")[0].split("/") if part]
-    # Expect: rest/api/2/project/{projectIdOrKey}/properties[/{propertyKey}]
+    path, _, query = path.partition("?")
+    parts = [part for part in path.split("/") if part]
+    # Expect: rest/api/2/project/search or
+    # rest/api/2/project/{projectIdOrKey}/properties[/{propertyKey}]
+    if (
+        len(parts) == 5
+        and parts[:4] == ["rest", "api", "2", "project"]
+        and parts[4] == "search"
+    ):
+        return search_projects(method, query)
     if (
         len(parts) < 6
         or parts[:4] != ["rest", "api", "2", "project"]
@@ -38,6 +87,14 @@ def handle(method, path, body):
     project = parts[4]
     key = parts[6] if len(parts) > 6 else None
     props = PROPERTIES.setdefault(project, {})
+    PROJECTS.setdefault(
+        project,
+        {
+            "id": str(10000 + len(PROJECTS)),
+            "key": project,
+            "name": "Project " + project,
+        },
+    )
 
     if method == "GET" and key is None:
         return 200, {"keys": [{"key": k, "self": "..."} for k in props]}

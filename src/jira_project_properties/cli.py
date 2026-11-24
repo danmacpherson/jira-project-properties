@@ -66,6 +66,14 @@ def cmd_delete(args: argparse.Namespace, client: JiraProjectPropertiesClient) ->
     return 0
 
 
+def cmd_find(args: argparse.Namespace, client: JiraProjectPropertiesClient) -> int:
+    matches = client.find_projects_with_property(args.key)
+    if not matches:
+        print("(no projects have this property)", file=sys.stderr)
+    print(json.dumps(matches, indent=2))
+    return 0
+
+
 # --------------------------------------------------------------------------- #
 # argument parsing                                                             #
 # --------------------------------------------------------------------------- #
@@ -138,6 +146,7 @@ def build_parser() -> argparse.ArgumentParser:
             "\n"
             "  {prog} list ABC\n"
             "  {prog} get ABC deployment.notes\n"
+            "  {prog} find deployment.notes\n"
             "  {prog} set ABC deployment.notes --value '{{\"environment\": \"prod\"}}'\n"
             "  {prog} set ABC deployment.config --file config.json\n"
             "  {prog} delete ABC deployment.notes\n"
@@ -188,6 +197,13 @@ def build_parser() -> argparse.ArgumentParser:
     delete_parser.add_argument("project", metavar="PROJECT", help="project id or key")
     delete_parser.add_argument("key", metavar="KEY", help="property key")
     delete_parser.set_defaults(func=cmd_delete)
+
+    find_parser = subparsers.add_parser(
+        "find",
+        help="list all projects that have a property, with their values",
+    )
+    find_parser.add_argument("key", metavar="KEY", help="property key to look for")
+    find_parser.set_defaults(func=cmd_find)
 
     for subparser in subparsers.choices.values():
         _add_connection_options(subparser, suppress=True)

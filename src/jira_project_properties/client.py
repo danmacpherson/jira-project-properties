@@ -1,12 +1,14 @@
 """REST client for Jira project entity properties.
 
-Wraps the four endpoints of the "project properties" API group:
+Wraps the project-properties endpoints plus the paginated project search
+used to find projects by property:
 
 =========== ==========================================================
 list keys   GET    /rest/api/{v}/project/{projectIdOrKey}/properties
 get value   GET    /rest/api/{v}/project/{projectIdOrKey}/properties/{propertyKey}
 set value   PUT    /rest/api/{v}/project/{projectIdOrKey}/properties/{propertyKey}
 delete      DELETE /rest/api/{v}/project/{projectIdOrKey}/properties/{propertyKey}
+find        GET    /rest/api/{v}/project/search?properties={propertyKey}
 =========== ==========================================================
 
 API reference:
@@ -123,6 +125,41 @@ class JiraProjectPropertiesClient:
         self._check_key(property_key)
         self._request("DELETE", self._url(project_id_or_key, property_key))
 
+    def find_projects_with_property(
+        self, property_key: str, *, page_size: int = 50
+    ) -> dict[str, Any]:
+        """Find every project that has *property_key* set.
+
+        Walks the paginated ``GET /project/search`` endpoint, requesting the
+        property alongside each project via the ``properties`` query
+        parameter, and returns a ``{project_key: property_value}`` mapping
+        for the projects that have the property (sorted by project key).
+        Only projects visible to the authenticated user are searched.
+        """
+        self._check_key(property_key)
+        matches: dict[str, Any] = {}
+        start_at = 0
+        while True:
+            response = self._request(
+                "GET",
+                self._search_url(),
+                params={
+                    "startAt": start_at,
+                    "maxResults": page_size,
+                    "properties": property_key,
+                },
+            )
+            data = _decode_json(response) or {}
+            values = data.get("values") or []
+            for project in values:
+                properties = project.get("properties") or {}
+                if property_key in properties:
+                    matches[project.get("key")] = properties[property_key]
+            if data.get("isLast") or not values:
+                break
+            start_at += len(values)
+        return dict(sorted(matches.items()))
+
     # ------------------------------------------------------------------ #
     # internals                                                          #
     # ------------------------------------------------------------------ #
@@ -135,8 +172,15 @@ class JiraProjectPropertiesClient:
             url += "/" + quote(str(property_key), safe="")
         return url
 
+    def _search_url(self) -> str:
+        return "{}/rest/api/{}/project/search".format(self.base_url, self.api_version)
+
     def _request(
-        self, method: str, url: str, body: str | None = None
+        self,
+        method: str,
+        url: str,
+        body: str | None = None,
+        params: dict[str, Any] | None = None,
     ) -> requests.Response:
         headers = {
             "Accept": "application/json",
@@ -148,7 +192,12 @@ class JiraProjectPropertiesClient:
             data = body.encode("utf-8")
         try:
             response = self.session.request(
-                method, url, headers=headers, data=data, timeout=self.timeout
+                method,
+                url,
+                headers=headers,
+                data=data,
+                params=params,
+                timeout=self.timeout,
             )
         except requests.RequestException as exc:
             raise JiraAPIError(0, "request failed: {}".format(exc)) from exc
